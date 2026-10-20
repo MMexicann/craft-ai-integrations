@@ -42,6 +42,17 @@ class ScrubTests(unittest.TestCase):
             "%USERPROFILE%/a.rs and %USERPROFILE%/b.rs",
         )
 
+    def test_embedded_profiles_and_uris_are_scrubbed_conservatively(self):
+        """Prioritize account privacy in nested roots, file URIs and web URLs."""
+        for path, expected in (
+            ("/var/home/test-user/x.rs", "/var%USERPROFILE%/x.rs"),
+            ("/mnt/c/Users/test-user/x.rs", "/mnt%USERPROFILE%/x.rs"),
+            ("file:///home/test-user/x", "file://%USERPROFILE%/x"),
+            ("https://example.com/home/test-user/page", "https://example.com%USERPROFILE%/page"),
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(scrub(path), expected)
+
     def test_unrelated_paths_and_bare_roots_are_unchanged(self):
         """Leave unrelated paths and roots without an account segment untouched."""
         for path in ("/homepage/test-user/a.rs", "/home", "/home/", "/Users/", "src/lib.rs"):
