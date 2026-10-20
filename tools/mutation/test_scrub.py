@@ -26,6 +26,15 @@ class ScrubTests(unittest.TestCase):
             with self.subTest(profile=profile):
                 self.assertEqual(scrub(profile + suffix), "%USERPROFILE%" + suffix)
 
+    def test_json_escaped_unix_profiles_keep_the_escaped_suffix(self):
+        """Redact Unix account names when JSON output escapes every slash."""
+        for root in (r"\/home", r"\/Users"):
+            with self.subTest(root=root):
+                self.assertEqual(
+                    scrub(root + r"\/test-user\/project\/src\/lib.rs:12"),
+                    r"%USERPROFILE%\/project\/src\/lib.rs:12",
+                )
+
     def test_every_profile_in_a_log_is_scrubbed(self):
         """Redact each account when one log includes several profile paths."""
         self.assertEqual(
