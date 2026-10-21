@@ -55,10 +55,7 @@ impl World {
 #[test]
 fn the_catalogue_lists_candle_then_burn_for_select_subject() {
     let f = feature();
-    let providers: Vec<&str> = f
-        .local
-        .as_ref()
-        .unwrap()
+    let providers: Vec<&str> = f.locals[0]
         .native
         .iter()
         .map(|n| n.provider.as_str())
@@ -172,7 +169,7 @@ fn the_picker_shows_comfyui_candle_and_burn_as_three_different_choices() {
     titles.dedup();
     assert_eq!(titles.len(), 3, "each must be told apart: {titles:?}");
     assert!(
-        titles.iter().any(|t| t.contains("Nvidia or Apple")),
+        titles.iter().any(|t| t.contains("Apple graphics")),
         "{titles:?}"
     );
     assert!(

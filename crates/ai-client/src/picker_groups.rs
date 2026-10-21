@@ -1,6 +1,8 @@
 //! Building the provider groups for the picker: the connections a person has, and the providers
 //! they could still set up. Pure functions over the store, so each rule has its own test.
 
+use std::path::Path;
+
 use craft_ai_core::role::fits;
 use craft_ai_core::{
     AppId, Auth, Billing, Binding, Connection, InputRole, Locality, ModelInfo, PRESETS, Role,
@@ -10,6 +12,7 @@ use craft_ai_features::{Route, SetupOption};
 use craft_ai_native::secrets::secret_for;
 
 use crate::client::AiClient;
+use crate::local::{is_recipe_connection, native_connection_id};
 use crate::picker::{GroupState, PickerGroup, PickerModel, SetupLink};
 
 /// The binding the app would use: its own choice first, then the launcher default.
@@ -95,8 +98,10 @@ pub(crate) fn connection_groups(
 }
 
 /// Providers that could do the tool and are not set up, greyed rather than hidden. A model that
-/// can be downloaded but has no workflow to run it yet is not offered.
+/// can be downloaded but has no workflow to run it yet is not offered. A built-in model whose
+/// saved connection has lost its weights file is listed again, so it can be set up afresh.
 pub(crate) fn unset_groups(
+    client: &AiClient,
     store: &StoreFile,
     role: &Role,
     options: &[SetupOption],
@@ -106,7 +111,7 @@ pub(crate) fn unset_groups(
         .iter()
         .filter(|o| o.usable && o.unlocks.iter().any(|u| u == role.id.as_str()))
     {
-        let (locality, note) = match &option.route {
+        let (locality, state, note) = match &option.route {
             Route::Service { preset } => {
                 let Some(preset) = PRESETS.iter().find(|p| p.key == preset) else {
                     continue;
@@ -118,30 +123,82 @@ pub(crate) fn unset_groups(
                 {
                     continue;
                 }
-                (None, format!("Not connected. {}", option.note))
+                (
+                    None,
+                    GroupState::NotSetUp,
+                    format!("Not connected. {}", option.note),
+                )
             }
-            Route::Local { .. } => {
+            Route::Local { feature, recipe } => {
+                // A connection a recipe registered stands for that recipe only; any other local
+                // connection still counts for every model, as before.
                 let have_local = store.connections.iter().any(|c| {
-                    c.locality == Locality::Local
-                        && c.models.iter().any(|m| fits(role, m).is_some())
+                    c.provider == "comfyui"
+                        && c.locality == Locality::Local
+                        && c.models.iter().any(|m| {
+                            fits(role, m).is_some()
+                                && (!is_recipe_connection(c, feature) || m.id.as_str() == recipe)
+                        })
                 });
                 if have_local {
                     continue;
                 }
                 (
                     Some(Locality::Local),
+                    GroupState::NotSetUp,
                     "Not installed. Runs on this computer.".to_owned(),
                 )
+            }
+            Route::Native {
+                feature,
+                provider,
+                model: current,
+            } => {
+                // A saved connection is not proof the files are still there. One whose weights
+                // file has gone keeps the Set up link, so the model can be installed again.
+                let saved: Vec<&ModelInfo> = store
+                    .connections
+                    .iter()
+                    .filter(|c| {
+                        c.provider == *provider
+                            && c.locality == Locality::Local
+                            && c.id.as_str() == native_connection_id(feature, provider)
+                    })
+                    .flat_map(|c| &c.models)
+                    .filter(|m| fits(role, m).is_some() && m.id.as_str() == current)
+                    .collect();
+                if saved.iter().any(|m| {
+                    m.local_file
+                        .as_deref()
+                        .is_some_and(|file| Path::new(file).is_file())
+                }) {
+                    continue;
+                }
+                let files_missing = !saved.is_empty();
+                if client.has_adapter(provider) {
+                    let note = if files_missing {
+                        "The model files are missing. Set it up again."
+                    } else {
+                        "Not installed. Runs on this computer."
+                    };
+                    (Some(Locality::Local), GroupState::NotSetUp, note.to_owned())
+                } else {
+                    (
+                        Some(Locality::Local),
+                        GroupState::NeedsAdapter,
+                        "This app can't use this option yet.".to_owned(),
+                    )
+                }
             }
         };
         groups.push(PickerGroup {
             title: option.title.clone(),
             locality,
-            state: GroupState::NotSetUp,
+            state,
             note: note.trim_end().to_owned(),
             models: Vec::new(),
             suggested: false,
-            setup: Some(SetupLink::New {
+            setup: (state != GroupState::NeedsAdapter).then(|| SetupLink::New {
                 option: option.id.clone(),
             }),
             size_bytes: option.size_bytes,

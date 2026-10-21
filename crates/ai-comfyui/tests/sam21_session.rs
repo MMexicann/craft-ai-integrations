@@ -25,17 +25,21 @@ fn installed_sam21_returns_a_real_nonempty_selection_mask() {
     let url = std::env::var("CRAFT_TEST_COMFYUI_URL").expect("local server address");
     let image =
         std::fs::read(std::env::var("CRAFT_TEST_SAM21_IMAGE").expect("test photo path")).unwrap();
-    let source = png::Decoder::new(image.as_slice()).read_info().unwrap();
+    let source = png::Decoder::new(std::io::Cursor::new(image.as_slice()))
+        .read_info()
+        .unwrap();
     let mut session = Sam21Session::new(&url).unwrap();
     session.verify_server().unwrap();
     session.prepare(&image).unwrap();
     let mask = session.ground("person").unwrap();
-    let mut decoder = png::Decoder::new(mask.as_slice()).read_info().unwrap();
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(mask.as_slice()))
+        .read_info()
+        .unwrap();
     assert_eq!(
         (decoder.info().width, decoder.info().height),
         (source.info().width, source.info().height)
     );
-    let mut pixels = vec![0; decoder.output_buffer_size()];
+    let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
     let frame = decoder.next_frame(&mut pixels).unwrap();
     assert!(pixels[..frame.buffer_size()].iter().any(|p| *p > 0));
     assert!(pixels[..frame.buffer_size()].contains(&0));
@@ -49,8 +53,8 @@ fn selected_sam21_segments_the_image_with_florence_and_returns_an_exact_mask() {
     let server = Server::start(move |r| {
         match r.path.as_str() {
         "/system_stats" => Reply::Json(200, json!({"system":{"comfyui_version":"0.22.3"},"devices":[{"type":"cuda"}]}).to_string()),
-        "/object_info" => Reply::Json(200, json!({"LoadImage":{},"Florence2ModelLoader":{"input":{"required":{"model":[["Florence-2-large"],{}]}}},"Florence2Run":{},"Florence2toCoordinates":{},"DownloadAndLoadSAM2Model":{},"Sam2Segmentation":{},"MaskToImage":{},"SaveImage":{}}).to_string()),
-        "/upload/image" => Reply::Json(200,json!({"name":"source.png","type":"input","subfolder":""}).to_string()),
+        "/object_info" => Reply::Json(200, json!({"LoadImage":{},"Florence2ModelLoader":{"input":{"required":{"model":[["Florence-2-large"],{}]}}},"Florence2Run":{},"Florence2toCoordinates":{},"DownloadAndLoadSAM2Model":{},"Sam2Segmentation":{},"MaskToImage":{},"PreviewImage":{}}).to_string()),
+        "/upload/image" => Reply::Json(200,json!({"name":"source.png","type":"temp","subfolder":""}).to_string()),
         "/prompt" => Reply::Json(200,json!({"prompt_id":"sam21-job"}).to_string()),
         "/history/sam21-job" => Reply::Json(200,json!({"sam21-job":{"status":{"completed":true},"outputs":{"8":{"images":[{"filename":"mask.png","type":"output","subfolder":""}]}}}}).to_string()),
         "/view?filename=mask.png&type=output" => Reply::Raw([format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",server_mask.len()).into_bytes(),server_mask.clone()].concat()),
@@ -100,8 +104,8 @@ fn cancelling_sam21_removes_only_its_queued_prompt() {
     let server = Server::start(move |r| {
         match r.path.as_str() {
         "/system_stats" => Reply::Json(200, json!({"system":{"comfyui_version":"0.22.3"},"devices":[{"type":"cuda"}]}).to_string()),
-        "/object_info" => Reply::Json(200, json!({"LoadImage":{},"Florence2ModelLoader":{"input":{"required":{"model":[["Florence-2-large"],{}]}}},"Florence2Run":{},"Florence2toCoordinates":{},"DownloadAndLoadSAM2Model":{},"Sam2Segmentation":{},"MaskToImage":{},"SaveImage":{}}).to_string()),
-        "/upload/image" => Reply::Json(200,json!({"name":"source.png","type":"input","subfolder":""}).to_string()),
+        "/object_info" => Reply::Json(200, json!({"LoadImage":{},"Florence2ModelLoader":{"input":{"required":{"model":[["Florence-2-large"],{}]}}},"Florence2Run":{},"Florence2toCoordinates":{},"DownloadAndLoadSAM2Model":{},"Sam2Segmentation":{},"MaskToImage":{},"PreviewImage":{}}).to_string()),
+        "/upload/image" => Reply::Json(200,json!({"name":"source.png","type":"temp","subfolder":""}).to_string()),
         "/prompt" => Reply::Json(200,json!({"prompt_id":"sam21-job"}).to_string()),
         "/history/sam21-job" if server_polls.fetch_add(1, Ordering::SeqCst) == 0 => Reply::Json(200,"{}".to_owned()),
         "/history/sam21-job" => Reply::Json(200,json!({"sam21-job":{"status":{"completed":true},"outputs":{"8":{"images":[{"filename":"mask.png","type":"output","subfolder":""}]}}}}).to_string()),
@@ -144,7 +148,7 @@ fn sam21_refuses_before_uploading_when_the_detector_is_not_in_comfyui() {
     let server = Server::start(|r| {
         match r.path.as_str() {
         "/system_stats" => Reply::Json(200, json!({"system":{"comfyui_version":"0.22.3"},"devices":[{"type":"cuda"}]}).to_string()),
-        "/object_info" => Reply::Json(200, json!({"LoadImage":{},"Florence2ModelLoader":{"input":{"required":{"model":[["Florence-2-base"],{}]}}},"Florence2Run":{},"Florence2toCoordinates":{},"DownloadAndLoadSAM2Model":{},"Sam2Segmentation":{},"MaskToImage":{},"SaveImage":{}}).to_string()),
+        "/object_info" => Reply::Json(200, json!({"LoadImage":{},"Florence2ModelLoader":{"input":{"required":{"model":[["Florence-2-base"],{}]}}},"Florence2Run":{},"Florence2toCoordinates":{},"DownloadAndLoadSAM2Model":{},"Sam2Segmentation":{},"MaskToImage":{},"PreviewImage":{}}).to_string()),
         _ => Reply::Json(404, "{}".into()),
     }
     });
@@ -176,8 +180,8 @@ fn device_server(device: Option<&'static str>, view_type: &'static str) -> Serve
             }
             Reply::Json(200, stats.to_string())
         }
-        "/object_info" => Reply::Json(200, json!({"LoadImage":{},"Florence2ModelLoader":{"input":{"required":{"model":[["Florence-2-large"],{}]}}},"Florence2Run":{},"Florence2toCoordinates":{},"DownloadAndLoadSAM2Model":{},"Sam2Segmentation":{},"MaskToImage":{},"SaveImage":{}}).to_string()),
-        "/upload/image" => Reply::Json(200, json!({"name":"source.png","type":"input","subfolder":""}).to_string()),
+        "/object_info" => Reply::Json(200, json!({"LoadImage":{},"Florence2ModelLoader":{"input":{"required":{"model":[["Florence-2-large"],{}]}}},"Florence2Run":{},"Florence2toCoordinates":{},"DownloadAndLoadSAM2Model":{},"Sam2Segmentation":{},"MaskToImage":{},"PreviewImage":{}}).to_string()),
+        "/upload/image" => Reply::Json(200, json!({"name":"source.png","type":"temp","subfolder":""}).to_string()),
         "/prompt" => Reply::Json(200, json!({"prompt_id":"job"}).to_string()),
         "/history/job" => Reply::Json(200, json!({"job":{"status":{"completed":true},"outputs":{"8":{"images":[{"filename":"mask.png","type":view_type,"subfolder":""}]}}}}).to_string()),
         "/view?filename=mask.png&type=output" => Reply::Raw([format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", mask.len()).into_bytes(), mask.clone()].concat()),
@@ -279,13 +283,13 @@ fn installed_sam21_selects_every_matching_subject() {
     let url = std::env::var("CRAFT_TEST_COMFYUI_URL").expect("local server address");
     let image =
         std::fs::read(std::env::var("CRAFT_TEST_SAM21_IMAGE").expect("test photo path")).unwrap();
-    let mut decoder = png::Decoder::new(image.as_slice());
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(image.as_slice()));
     decoder.set_transformations(png::Transformations::EXPAND);
     let mut reader = decoder.read_info().unwrap();
     let (w, h) = (reader.info().width as usize, reader.info().height as usize);
     let (color, _) = reader.output_color_type();
     let channels = color.samples();
-    let mut pixels = vec![0; reader.output_buffer_size()];
+    let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
     reader.next_frame(&mut pixels).unwrap();
     let mut two = Vec::new();
     for row in pixels.chunks(w * channels).take(h) {
@@ -305,8 +309,10 @@ fn installed_sam21_selects_every_matching_subject() {
     session.verify_server().unwrap();
     session.prepare(&doubled).unwrap();
     let mask = session.ground("person").unwrap();
-    let mut decoder = png::Decoder::new(mask.as_slice()).read_info().unwrap();
-    let mut out = vec![0; decoder.output_buffer_size()];
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(mask.as_slice()))
+        .read_info()
+        .unwrap();
+    let mut out = vec![0; decoder.output_buffer_size().unwrap()];
     let frame = decoder.next_frame(&mut out).unwrap();
     let samples = frame.color_type.samples();
     let lit = |from: usize, to: usize| {

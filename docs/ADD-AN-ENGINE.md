@@ -109,8 +109,10 @@ pub fn runners() -> Vec<std::sync::Arc<dyn craft_ai_engine::ModelRunner>> {
 }
 ```
 
-The app (or the launcher) puts the runners in a registry and gives the client the registry. That is
-the whole of enabling an engine in an app:
+An engine that ships with this repository also gets a cargo feature on `craft-ai-client`
+(`candle` today). An app turns the feature on and `ProviderFactory::standard()` knows the engine:
+nothing else. For any other engine, the app (or the launcher) puts the runners in a registry and
+gives the client the registry:
 
 ```rust,ignore
 let mut registry = EngineRegistry::new();
@@ -118,9 +120,13 @@ registry.extend(my_engine::runners());
 client = client.with_factory({ let mut f = ProviderFactory::standard(); f.register_engines(registry); f });
 ```
 
-`crates/ai-client/tests/engines.rs` runs this path end to end with a fake runner: the tool
+`crates/ai-client/tests/engines.rs` runs this path end to end with a fake runner, and
+`crates/ai-client/tests/candle_live.rs` does it with the real SAM 3 (skipped without the
+checkpoint): the tool
 enabled from a weights file, the client planning and starting a job, the output coming back.
 
 For the launcher to offer the model, add a `NativeRoute` (engine name and model id, matching
-`engine()` and `model().id` above) to the tool's recipe in `crates/ai-features/src/catalogue.rs`.
+`engine()` and `model().id` above) to the recipe whose weights it reads, in
+`crates/ai-features/src/catalogue.rs`. A tool can list several recipes; its built-in runtimes are
+taken from the first recipe that can run, the same one `ToolDesk::enable_local` registers.
 Nothing else in any app changes.

@@ -36,9 +36,10 @@ pub struct Feature {
     #[serde(default)]
     pub inputs: Vec<InputRole>,
     pub uses: Vec<AppUse>,
-    /// Run it on this computer, when a recipe has been worked out and checked.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local: Option<LocalRecipe>,
+    /// Run it on this computer, when recipes have been worked out and checked. A tool may offer
+    /// several models; the first is the one a plain `plan` call refers to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub locals: Vec<LocalRecipe>,
     /// Hosted routes that have a working adapter.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cloud: Vec<CloudOption>,
@@ -54,6 +55,13 @@ impl Feature {
             capability: self.capability.clone(),
             inputs: self.inputs.clone(),
         })
+    }
+
+    /// The recipe every built-in runtime path acts on: the first one apps can run. Planning,
+    /// setup options, the Install offer, file setup, registration and engine advice all use it, so
+    /// an option the picker shows is never one that setup then refuses.
+    pub fn first_usable_recipe(&self) -> Option<&LocalRecipe> {
+        self.locals.iter().find(|r| r.usable)
     }
 
     /// Apps where the tool exists today.

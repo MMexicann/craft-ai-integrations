@@ -45,7 +45,16 @@ impl World {
             self.shared.clone(),
             Arc::new(MemoryStore::new()),
         )
+        .with_factory(without_engines())
     }
+}
+
+/// A client of an app that has not enabled any built-in engine, whatever cargo features are on.
+fn without_engines() -> ProviderFactory {
+    let mut factory = ProviderFactory::standard();
+    factory.unregister("candle");
+    factory.unregister("burn");
+    factory
 }
 
 #[test]
@@ -60,6 +69,8 @@ fn an_app_that_only_has_comfyui_is_advised_comfyui_and_the_built_in_ones_are_lis
     assert!(advice[1..].iter().all(|a| !a.usable && !a.recommended));
 }
 
+/// An app that declares a Candle adapter is advised Candle on an NVIDIA PC: first in the list,
+/// recommended, on the GPU, and the only recommended entry.
 #[test]
 fn an_app_with_a_candle_adapter_is_advised_candle_on_nvidia() {
     let w = World::new();
@@ -80,12 +91,14 @@ fn an_app_with_a_candle_adapter_is_advised_candle_on_nvidia() {
     );
 }
 
+/// A tool with no local recipe, or whose recipes are all marked not usable yet, gets no engine
+/// advice, so the screen never recommends a runtime for a route that cannot run.
 #[test]
 fn a_tool_with_no_local_recipe_has_no_engine_advice() {
     let w = World::new();
     let generative = craft_ai_features::builtin()
         .into_iter()
-        .find(|f| f.local.is_none())
+        .find(|f| f.locals.is_empty())
         .unwrap();
     assert!(
         w.client()
@@ -93,7 +106,10 @@ fn a_tool_with_no_local_recipe_has_no_engine_advice() {
             .is_empty()
     );
     let mut f = select_subject();
-    f.local.as_mut().unwrap().usable = false;
+    // A tool none of whose recipes can run yet has no advice.
+    for local in &mut f.locals {
+        local.usable = false;
+    }
     assert!(w.client().engine_advice(&f, &windows_nvidia()).is_empty());
 }
 

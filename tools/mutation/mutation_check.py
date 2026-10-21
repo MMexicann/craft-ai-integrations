@@ -407,7 +407,18 @@ LC = [
     ('non-local-address-accepted', LOCAL_RS, "if !endpoint.is_loopback() || trimmed.contains(['?', '#']) {", "if trimmed.contains(['?', '#']) {", CL, 'local', ''),
     ('query-in-address-accepted', LOCAL_RS, "if !endpoint.is_loopback() || trimmed.contains(['?', '#']) {", 'if !endpoint.is_loopback() {', CL, 'local', ''),
     ('trailing-slash-kept', LOCAL_RS, "input.trim_end_matches('/')", "input.trim_end_matches('~')", CL, 'local', ''),
-    ('unrunnable-recipe-accepted', LOCAL_RS, 'feature.local.as_ref().filter(|r| r.usable)', 'feature.local.as_ref().filter(|_| true)', CL, 'local', ''),
+    ('unrunnable-recipe-accepted', LOCAL_RS, 'feature.locals.iter().find(|r| r.usable)', 'feature.locals.iter().find(|_| true)', CL, 'local', ''),
+    ('unrunnable-named-recipe-accepted', LOCAL_RS, '.find(|r| r.workflow == workflow && r.usable)', '.find(|r| r.workflow == workflow)', CL, 'local_recipes', 'cannot_run_yet'),
+    ('named-recipe-name-ignored', LOCAL_RS, '.find(|r| r.workflow == workflow && r.usable)', '.find(|r| r.usable)', CL, 'local_recipes', ''),
+    ('second-recipe-takes-plain-id', LOCAL_RS, '.is_some_and(|first| first.workflow == recipe.workflow);', '.is_some();', CL, 'local_recipes', 'own_connection'),
+    ('recipe-id-shares-runtime-namespace', LOCAL_RS, 'format!("local-{}-recipe-{}", feature.id, recipe.workflow)', 'format!("local-{}-{}", feature.id, recipe.workflow)', CL, 'local_recipes', 'built_in_runtime_never'),
+    ('picker-ignores-which-recipe-is-installed', PICK_G, '&& (!is_recipe_connection(c, feature) || m.id.as_str() == recipe)', '&& (!is_recipe_connection(c, feature) || true)', CL, 'local_recipes', 'keeps_the_setup_link'),
+    ('picker-recipe-connection-never-counts', PICK_G, '&& (!is_recipe_connection(c, feature) || m.id.as_str() == recipe)', '&& (!is_recipe_connection(c, feature) || false)', CL, 'local_recipes', 'setup_link'),
+    ('other-adapter-connection-replaced', LOCAL_RS, 'Some(existing) if existing.provider != connection.provider => {', 'Some(existing) if false => {', CL, 'local_recipes', 'never_replaces'),
+    ('advice-from-first-recipe-only', C + 'ai-client/src/engine.rs', 'feature.locals.iter().find(|r| r.usable) else', 'feature.locals.first().filter(|r| r.usable) else', CL, 'local_recipes', 'engine_advice_follows'),
+    ('runtime-from-first-recipe-only', LOCAL_RS, '            .iter()\n            .find(|r| r.usable)\n            .and_then(|r| r.native.first())', '            .first()\n            .and_then(|r| r.native.first())', CL, 'local_recipes', 'built_in_runtime_comes_from'),
+    ('plans-reuse-first-recipe', C + 'ai-features/src/plan.rs', '.map(|recipe| plan_recipe(feature, recipe, inventory))', '.map(|_| plan(feature, inventory))', FE, 'recipes', ''),
+    ('options-share-one-recipe-id', C + 'ai-features/src/options.rs', 'id: format!("local:{}:{}", feature.id, recipe.workflow),', 'id: format!("local:{}", feature.id),', FE, 'recipes', 'own_setup_option'),
     ('replaces-a-choice-made', LOCAL_RS, 'if !store.defaults.iter().any(|b| b.role == binding.role) {', 'if true {', CL, 'local', ''),
     ('never-binds', LOCAL_RS, 'if !store.defaults.iter().any(|b| b.role == binding.role) {', 'if false {', CL, 'local', ''),
     ('moved-address-kept-old', LOCAL_RS, 'Some(existing) => *existing = connection,', 'Some(_) => {}', CL, 'local', ''),
@@ -434,7 +445,7 @@ NR = [
     ('relative-path-accepted', LOCAL_RS, '!path.is_absolute() || !safetensors || !path.is_file()', '!safetensors || !path.is_file()', CL, 'local_native', 'relative_path'),
     ('any-extension-accepted', LOCAL_RS, '!path.is_absolute() || !safetensors || !path.is_file()', '!path.is_absolute() || !path.is_file()', CL, 'local_native', 'cannot_be_the_weights'),
     ('missing-file-accepted', LOCAL_RS, '!path.is_absolute() || !safetensors || !path.is_file()', '!path.is_absolute() || !safetensors', CL, 'local_native', 'cannot_be_the_weights'),
-    ('unusable-recipe-accepted', LOCAL_RS, '.filter(|r| r.usable)\n            .and_then(|r| r.native.iter().find(|n| n.provider == provider))', '.and_then(|r| r.native.iter().find(|n| n.provider == provider))', CL, 'local_native', 'not_ready_to_use'),
+    ('unusable-recipe-accepted', LOCAL_RS, '.find(|r| r.usable)\n            .and_then(|r| r.native.iter().find(|n| n.provider == provider))', '.find(|_| true)\n            .and_then(|r| r.native.iter().find(|n| n.provider == provider))', CL, 'local_recipes', 'built_in_runtime_comes_from'),
     ('file-not-given-to-apps', LOCAL_RS, 'file: resolved.model.local_file.clone(),', 'file: None,', CL, 'local_native', 'registered_bound'),
     ('file-not-stored', LOCAL_RS, 'model.local_file = Some(file);', 'model.local_file = None;', CL, 'local_native', 'registered_bound'),
     ('other-backend-file-served', LOCAL_RS, 'if route.provider != provider {', 'if false {', CL, 'local_native', 'comfyui_route_has_no_file'),
@@ -462,6 +473,13 @@ CT = [
 
 from mutation_u2 import U2, U2_EQUIVALENT  # noqa: E402
 from mutation_contract import CA  # noqa: E402
+from mutation_scratch import SF, SF_EQUIVALENT  # noqa: E402
+from mutation_catalogue import CG  # noqa: E402
+from mutation_consent import CE, CE_EQUIVALENT  # noqa: E402
+from mutation_native import NF  # noqa: E402
+from mutation_native_setup import NS  # noqa: E402
+from mutation_native_session import NQ  # noqa: E402
+from mutation_native_widget import NW  # noqa: E402
 
 PS_RS = C + 'ai-comfy-env/src/source/pack/status.rs'
 PS = [
@@ -523,7 +541,7 @@ S21 = [
     ('selections-share-a-sink-name', SAM21, 'NEXT_SELECTION.fetch_add(1, Ordering::Relaxed)', '0', CU, 'sam21_session', 'its_own_sink_name'),
 ]
 
-GROUPS = {'s21': S21, 'ca': CA, 'lg': LG, 'ps': PS, 'ct': CT, 'u2': U2, 'nr': NR, 'u1': U1, 'u3': U3, 'u4': U4, 'p4': P4, 'p10': P10, 'v1': V1, 'v2': V2, 'v3': V3, 'sd': SD, 'vx': VX, 'lc': LC, 'lr': LR, 'wf': WF}
+GROUPS = {'nw': NW, 'nq': NQ, 'ns': NS, 'nf': NF, 'ce': CE, 'cg': CG, 'sf': SF, 's21': S21, 'ca': CA, 'lg': LG, 'ps': PS, 'ct': CT, 'u2': U2, 'nr': NR, 'u1': U1, 'u3': U3, 'u4': U4, 'p4': P4, 'p10': P10, 'v1': V1, 'v2': V2, 'v3': V3, 'sd': SD, 'vx': VX, 'lc': LC, 'lr': LR, 'wf': WF}
 # Mutants whose effect is also refused by a second, independent check on this machine. They are
 # recorded as equivalent here, with the reason, and are never counted as caught.
 EQUIVALENT = {
@@ -532,6 +550,8 @@ EQUIVALENT = {
     'directory-taken-as-local-file': 'on Windows a directory reports length 0, which the size check also refuses; elsewhere the is_file check is what refuses it',
 }
 EQUIVALENT.update(U2_EQUIVALENT)
+EQUIVALENT.update(SF_EQUIVALENT)
+EQUIVALENT.update(CE_EQUIVALENT)
 # Both reasons above are about Windows; on Linux and macOS they are observed, not assumed.
 WINDOWS_ONLY_EQUIVALENT = {'directory-taken-as-local-file', 'input-folder-read'}
 TIMEOUTS = {}
